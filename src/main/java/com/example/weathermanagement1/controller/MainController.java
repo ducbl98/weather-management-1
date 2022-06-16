@@ -1,6 +1,10 @@
 package com.example.weathermanagement1.controller;
 
-import com.example.weathermanagement1.dto.RecordDto;
+import com.example.weathermanagement1.dto.request.RecordDto;
+import com.example.weathermanagement1.dto.response.General;
+import com.example.weathermanagement1.dto.response.WeatherDataResponse;
+import com.example.weathermanagement1.dto.response.WeatherDetail;
+import com.example.weathermanagement1.dto.response.WindDetail;
 import com.example.weathermanagement1.entity.*;
 import com.example.weathermanagement1.service.*;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -9,17 +13,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.modelmapper.ModelMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 import org.springframework.web.client.RestTemplate;
 
 import java.text.SimpleDateFormat;
-import java.util.Date;
-import java.util.List;
-import java.util.Optional;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -57,96 +55,159 @@ public class MainController {
     @Autowired
     private RestTemplate restTemplate;
 
+
     @RequestMapping("/{cityName}")
-    public ResponseEntity<RecordDto> createRecord(@PathVariable String cityName) {
+    public ResponseEntity<WeatherDataResponse> getWeatherInfo(@PathVariable String cityName) {
         String url = "https://api.openweathermap.org/data/2.5/weather?q=" + cityName + "&appid=87cdd7f5bbfec3051219cb2cf72ef799&units=metric";
         String result = restTemplate.getForObject(url, String.class);
-        Date date = new Date();
-        SimpleDateFormat formatter = new SimpleDateFormat("yyyy-MM-dd");
-        SimpleDateFormat formatter2 = new SimpleDateFormat("HH:mm:ss");
-        String format = formatter.format(date);
-        String format2 = formatter2.format(date);
         boolean isExist = this.checkExistWeatherData(cityName);
+        WeatherDataResponse weatherDataResponse = null;
 
         try {
             ObjectMapper objectMapper = new ObjectMapper();
             RecordDto recordDto = objectMapper.readValue(result, RecordDto.class);
             System.out.println("Record Dto: " + recordDto);
 
-            City city = new City(recordDto.getId(), recordDto.getCod(), recordDto.getName(), recordDto.getTimezone());
-            cityService.save(city);
+            Optional<City> city = cityService.findByName(cityName);
+            if (city.isPresent()) {
+                List<Record> records = recordService.getAllRecordsByCityName(cityName);
+                if (!records.isEmpty()) {
+                    Record latestRecord = records.get(0);
+                    SimpleDateFormat formatter = new SimpleDateFormat("yyyy-MM-dd");
+                    boolean isSameDate = formatter.format(latestRecord.getMeasureDate()).equals(formatter.format(new Date()));
+                    if (isSameDate) {
+                        System.out.println("Latest record is same date");
+                        latestRecord.setBase(recordDto.getBase());
+                        latestRecord.setVisibility(recordDto.getVisibility());
+                        latestRecord.setDt(recordDto.getDt());
+                        latestRecord.setMeasureDate(new Date(recordDto.getDt()*1000));
+                        latestRecord.setMeasureTime(new Date(recordDto.getDt()*1000));
+                        recordService.save(latestRecord);
 
-            Record record = new Record(recordDto.getDt(), recordDto.getVisibility(), recordDto.getBase(), city);
-            record.setMeasureDate(new Date(recordDto.getDt()*1000));
-            record.setMeasureTime(new Date(recordDto.getDt()*1000));
-            recordService.save(record);
+                        Clouds clouds = latestRecord.getClouds();
+                        clouds.setStorage(recordDto.getClouds().getAll());
+                        cloudsService.save(clouds);
 
-            Set<Weather> weathers= recordDto.getWeather().stream().map(weatherDto -> modelMapper.map(weatherDto,Weather.class)).collect(Collectors.toSet());
-            for (Weather weather : weathers) {
-                weather.getRecords().add(record);
-                weatherService.save(weather);
+                        Coord coord = latestRecord.getCoordinate();
+                        coord.setLat(recordDto.getCoord().getLat());
+                        coord.setLon(recordDto.getCoord().getLon());
+                        coordService.save(coord);
+
+                        Main main = latestRecord.getMain();
+                        main.setTemp(recordDto.getMain().getTemp());
+                        main.setPressure(recordDto.getMain().getPressure());
+                        main.setHumidity(recordDto.getMain().getHumidity());
+                        main.setTemp_min(recordDto.getMain().getTemp_min());
+                        main.setTemp_max(recordDto.getMain().getTemp_max());
+                        main.setFeels_like(recordDto.getMain().getFeels_like());
+                        mainService.save(main);
+
+                        Sys sys = latestRecord.getSysDetail();
+                        sys.setSunrise(recordDto.getSys().getSunrise());
+                        sys.setSunset(recordDto.getSys().getSunset());
+                        sys.setSysId(recordDto.getSys().getId());
+                        sys.setType(recordDto.getSys().getType());
+                        sys.setCountry(recordDto.getSys().getCountry());
+                        sysService.save(sys);
+
+                        Set<Weather> weathers = latestRecord.getWeathers();
+                        for (Weather weather : weathers) {
+                            weatherService.deleteWeather(weather);
+                        }
+                        Set<Weather> recordDtoWeathers = recordDto.getWeather().stream().map(weather -> {
+                            Weather weather1 = new Weather();
+                            weather1.setId(weather.getId());
+                            weather1.setMain(weather.getMain());
+                            weather1.setDescription(weather.getDescription());
+                            weather1.setIcon(weather.getIcon());
+                            return weather1;
+                        }).collect(Collectors.toSet());
+
+                        recordDtoWeathers.stream().filter(weather -> !weathers.contains(weather)).forEach(weather -> {
+                            Optional<Weather> existingWeather = weatherService.getWeatherById(weather.getWeatherId());
+                            if (existingWeather.isEmpty()) {
+                                weather.getRecords().add(latestRecord);
+                                weatherService.save(weather);
+                            } else {
+                                existingWeather.get().getRecords().add(latestRecord);
+                                weatherService.save(existingWeather.get());
+                            }
+                        });
+
+                        Wind wind = latestRecord.getWind();
+                        wind.setDeg(recordDto.getWind().getDeg());
+                        wind.setSpeed(recordDto.getWind().getSpeed());
+                        wind.setGust(recordDto.getWind().getGust());
+                        windService.save(wind);
+
+                        WindDetail windDetail = new WindDetail(recordDto.getWind().getSpeed(), recordDto.getWind().getDeg(), recordDto.getWind().getGust());
+                        General general = new General(recordDto.getMain().getTemp(), recordDto.getMain().getFeels_like(), recordDto.getMain().getTemp_min(), recordDto.getMain().getTemp_max(), recordDto.getMain().getPressure(), recordDto.getMain().getHumidity(), recordDto.getClouds().getAll(), recordDto.getVisibility(), windDetail);
+                        List<WeatherDetail> weatherDetails = recordDto.getWeather().stream().map(weather -> new WeatherDetail(weather.getDescription(), weather.getIcon())).collect(Collectors.toList());
+                        String measureDate = new SimpleDateFormat("yyyy-MM-dd").format(new Date(recordDto.getDt()*1000));
+                        String measureTime = new SimpleDateFormat("HH:mm:ss").format(new Date(recordDto.getDt()*1000));
+                        weatherDataResponse = new WeatherDataResponse(latestRecord.getId(),recordDto.getId(), recordDto.getName(), recordDto.getSys().getCountry(), recordDto.getTimezone(), weatherDetails, general, measureDate + " " + measureTime);
+
+                    } else {
+                        System.out.println("Latest recordDto is not same date");
+
+                        Record record = new Record(recordDto.getDt(), recordDto.getVisibility(), recordDto.getBase(), latestRecord.getCity());
+                        record.setMeasureDate(new Date(recordDto.getDt()*1000));
+                        record.setMeasureTime(new Date(recordDto.getDt()*1000));
+                        recordService.save(record);
+
+                        Set<Weather> weathers= recordDto.getWeather().stream().map(weatherDto -> modelMapper.map(weatherDto,Weather.class)).collect(Collectors.toSet());
+                        for (Weather weather : weathers) {
+                            Optional<Weather> existingWeather = weatherService.getWeatherById(weather.getWeatherId());
+                            if (existingWeather.isEmpty()) {
+                                weather.getRecords().add(record);
+                                weatherService.save(weather);
+                            } else {
+                                existingWeather.get().getRecords().add(record);
+                                weatherService.save(existingWeather.get());
+                            }
+                        }
+
+                        Clouds clouds = new Clouds(recordDto.getClouds().getAll());
+                        clouds.setRecord(record);
+                        cloudsService.save(clouds);
+
+                        Coord coord = modelMapper.map(recordDto.getCoord(), Coord.class);
+                        coord.setRecord(record);
+                        coordService.save(coord);
+
+                        Main main = modelMapper.map(recordDto.getMain(), Main.class);
+                        main.setRecord(record);
+                        mainService.save(main);
+
+                        Sys sys = modelMapper.map(recordDto.getSys(), Sys.class);
+                        sys.setRecord(record);
+                        sysService.save(sys);
+
+                        Wind wind = modelMapper.map(recordDto.getWind(), Wind.class);
+                        wind.setRecord(record);
+                        windService.save(wind);
+
+                        WindDetail windDetail = new WindDetail(recordDto.getWind().getSpeed(), recordDto.getWind().getDeg(), recordDto.getWind().getGust());
+                        General general = new General(recordDto.getMain().getTemp(), recordDto.getMain().getFeels_like(), recordDto.getMain().getTemp_min(), recordDto.getMain().getTemp_max(), recordDto.getMain().getPressure(), recordDto.getMain().getHumidity(), recordDto.getClouds().getAll(), recordDto.getVisibility(), windDetail);
+                        List<WeatherDetail> weatherDetails = recordDto.getWeather().stream().map(weather -> new WeatherDetail(weather.getDescription(), weather.getIcon())).collect(Collectors.toList());
+                        String measureDate = new SimpleDateFormat("yyyy-MM-dd").format(new Date(recordDto.getDt()*1000));
+                        String measureTime = new SimpleDateFormat("HH:mm:ss").format(new Date(recordDto.getDt()*1000));
+                        weatherDataResponse = new WeatherDataResponse(record.getId(),recordDto.getId(), recordDto.getName(), recordDto.getSys().getCountry(), recordDto.getTimezone(), weatherDetails, general, measureDate + " " + measureTime);
+                    }
+                }
+            } else {
+                System.out.println("City is not exist");
+                Record record= this.createRecord(recordDto);
+                System.out.println("Record: " + record.getBase());
+                WindDetail windDetail = new WindDetail(recordDto.getWind().getSpeed(), recordDto.getWind().getDeg(), recordDto.getWind().getGust());
+                General general = new General(recordDto.getMain().getTemp(), recordDto.getMain().getFeels_like(), recordDto.getMain().getTemp_min(), recordDto.getMain().getTemp_max(), recordDto.getMain().getPressure(), recordDto.getMain().getHumidity(), recordDto.getClouds().getAll(), recordDto.getVisibility(), windDetail);
+                List<WeatherDetail> weatherDetails = recordDto.getWeather().stream().map(weather -> new WeatherDetail(weather.getDescription(), weather.getIcon())).collect(Collectors.toList());
+                String measureDate = new SimpleDateFormat("yyyy-MM-dd").format(new Date(recordDto.getDt()*1000));
+                String measureTime = new SimpleDateFormat("HH:mm:ss").format(new Date(recordDto.getDt()*1000));
+                weatherDataResponse = new WeatherDataResponse(record.getId(),recordDto.getId(), recordDto.getName(), recordDto.getSys().getCountry(), recordDto.getTimezone(), weatherDetails, general, measureDate + " " + measureTime);
             }
 
-            Clouds clouds = new Clouds(recordDto.getClouds().getAll());
-            clouds.setRecord(record);
-            cloudsService.save(clouds);
-
-            Coord coord = modelMapper.map(recordDto.getCoord(), Coord.class);
-            coord.setRecord(record);
-            coordService.save(coord);
-
-            Main main = modelMapper.map(recordDto.getMain(), Main.class);
-            main.setRecord(record);
-            mainService.save(main);
-
-            Sys sys = modelMapper.map(recordDto.getSys(), Sys.class);
-            sys.setRecord(record);
-            sysService.save(sys);
-
-            Wind wind = modelMapper.map(recordDto.getWind(), Wind.class);
-            wind.setRecord(record);
-            windService.save(wind);
-
-
-//            CloudsEntity cloudsEntity = modelMapper.map(recordDto.getClouds(),CloudsEntity.class);
-//            cloudsEntity.setRecord(recordEntity);
-//            recordEntity.setClouds(cloudsEntity);
-//            System.out.println("Clouds Entity: " + cloudsEntity);
-//
-//            CoordEntity coordEntity = modelMapper.map(recordDto.getCoord(),CoordEntity.class);
-//            coordEntity.setRecord(recordEntity);
-//            recordEntity.setCoordinate(coordEntity);
-//            System.out.println("Coord Entity: " + coordEntity);
-//
-//            MainEntity mainEntity = modelMapper.map(recordDto.getMain(),MainEntity.class);
-//            mainEntity.setRecord(recordEntity);
-//            recordEntity.setMain(mainEntity);
-//            System.out.println("Main Entity: " + mainEntity);
-//
-//            SysEntity sysEntity = modelMapper.map(recordDto.getSys(),SysEntity.class);
-//            sysEntity.setRecord(recordEntity);
-//            recordEntity.setSysDetail(sysEntity);
-//            System.out.println("Sys Entity: " + sysEntity);
-//
-//            WindEntity windEntity = modelMapper.map(recordDto.getWind(),WindEntity.class);
-//            windEntity.setRecord(recordEntity);
-//            recordEntity.setWind(windEntity);
-//            windEntity.setRecord(recordEntity);
-//
-//            Set<WeatherEntity> weatherEntities= recordDto.getWeather().stream().map(weatherDto -> modelMapper.map(weatherDto,WeatherEntity.class)).collect(Collectors.toSet());
-//            for (WeatherEntity weatherEntity : weatherEntities) {
-//                weatherEntity.getRecords().add(recordEntity);
-//            }
-//            recordEntity.setWeathers(weatherEntities);
-//            System.out.println("Weather Entities: " + weatherEntities);
-//            System.out.println("Record Entity: " + recordEntity);
-
-//            Set<RecordEntity> recordEntities = new HashSet<>();
-//            recordEntities.add(recordEntity);
-//            cityEntity.setRecords(recordEntities);
-//
-//            cityService.createCity(cityEntity);
-            return ResponseEntity.ok(recordDto);
+            return ResponseEntity.ok(weatherDataResponse);
         } catch (JsonProcessingException e) {
             e.printStackTrace();
             return ResponseEntity.badRequest().build();
@@ -170,10 +231,185 @@ public class MainController {
             System.out.println("Difference: " + formatter.format(latestRecord.getMeasureDate()).equals(formatter.format(date)));
             System.out.println("Difference: " + formatter.format(latestRecord.getMeasureDate()).equals(formatter.format(date2)));
 
+            System.out.println("Record Details1:" + latestRecord.getMain().getTemp());
+            System.out.println("Record Details2:" + latestRecord.getMain().getHumidity());
+            System.out.println("Record Details3:" + latestRecord.getMain().getPressure());
+            System.out.println("Record Details4:" + latestRecord.getMain().getTemp_min());
+            System.out.println("Record Details5:" + latestRecord.getMain().getTemp_max());
+
         }
-//        log.info("sendRequest {}", records);
         return city.isPresent();
     }
 
+    public Record createRecord(RecordDto recordDto) {
+        City city = new City(recordDto.getId(), recordDto.getCod(), recordDto.getName(), recordDto.getTimezone());
+        cityService.save(city);
 
+        Record record = new Record(recordDto.getDt(), recordDto.getVisibility(), recordDto.getBase(), city);
+        record.setMeasureDate(new Date(recordDto.getDt()*1000));
+        record.setMeasureTime(new Date(recordDto.getDt()*1000));
+        recordService.save(record);
+
+        Set<Weather> weathers= recordDto.getWeather().stream().map(weatherDto -> modelMapper.map(weatherDto,Weather.class)).collect(Collectors.toSet());
+        for (Weather weather : weathers) {
+            Optional<Weather> existingWeather = weatherService.getWeatherById(weather.getWeatherId());
+            if (existingWeather.isEmpty()) {
+                weather.getRecords().add(record);
+                weatherService.save(weather);
+            } else {
+                existingWeather.get().getRecords().add(record);
+                weatherService.save(existingWeather.get());
+            }
+        }
+
+        Clouds clouds = new Clouds(recordDto.getClouds().getAll());
+        clouds.setRecord(record);
+        cloudsService.save(clouds);
+
+        Coord coord = modelMapper.map(recordDto.getCoord(), Coord.class);
+        coord.setRecord(record);
+        coordService.save(coord);
+
+        Main main = modelMapper.map(recordDto.getMain(), Main.class);
+        main.setRecord(record);
+        mainService.save(main);
+
+        Sys sys = modelMapper.map(recordDto.getSys(), Sys.class);
+        sys.setRecord(record);
+        sysService.save(sys);
+
+        Wind wind = modelMapper.map(recordDto.getWind(), Wind.class);
+        wind.setRecord(record);
+        windService.save(wind);
+        return record;
+    }
+
+    @DeleteMapping("/delete/{id}")
+    public String deleteRecord(@PathVariable Long id) {
+        Record record = recordService.getRecordById(id);
+        System.out.println("Record: " + record);
+        for (Weather weather : record.getWeathers()) {
+            weather.getRecords().remove(record);
+            weatherService.save(weather);
+            Weather weather1 = weatherService.getWeatherById(weather.getWeatherId()).get();
+//            System.out.println("Weather: " + weather1.getRecords());
+        }
+//        recordService.deleteWeathers(id);
+//        System.out.println("Weathers: " + record.getWeathers());
+        return recordService.delete(id);
+    }
+
+    @GetMapping("/recent/{cityName}")
+    public ResponseEntity<List<WeatherDataResponse>> getRecentRecords(@PathVariable String cityName) {
+        List<Record> records = recordService.getAllRecordsByCityName(cityName);
+        if (records.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        List<WeatherDataResponse> weatherDataResponses = new ArrayList<>();
+        for (Record record : records) {
+            WindDetail windDetail = new WindDetail(record.getWind().getSpeed(), record.getWind().getDeg(), record.getWind().getGust());
+            General general = new General(record.getMain().getTemp(), record.getMain().getFeels_like(), record.getMain().getTemp_min(), record.getMain().getTemp_max(), record.getMain().getPressure(), record.getMain().getHumidity(), record.getClouds().getStorage(), record.getVisibility(), windDetail);
+            List<WeatherDetail> weatherDetails = record.getWeathers().stream().map(weather -> new WeatherDetail(weather.getDescription(), weather.getIcon())).collect(Collectors.toList());
+            String measureDate = new SimpleDateFormat("yyyy-MM-dd").format(record.getMeasureDate());
+            String measureTime = new SimpleDateFormat("HH:mm:ss").format(record.getMeasureTime());
+            WeatherDataResponse weatherDataResponse = new WeatherDataResponse(record.getId(),record.getCity().getCityId(), record.getCity().getCityName(), record.getSysDetail().getCountry(), record.getCity().getTimezone(), weatherDetails, general, measureDate + " " + measureTime);
+            weatherDataResponses.add(weatherDataResponse);
+//            System.out.println(weatherDataResponse.toString());
+        }
+        return ResponseEntity.ok(weatherDataResponses);
+    }
+
+    @GetMapping("/update/{cityName}")
+    public ResponseEntity<WeatherDataResponse> updateLatestRecord(@PathVariable String cityName) {
+        Optional<City> city = cityService.findByName(cityName);
+        if (!city.isEmpty()) {
+            Record latestRecord = recordService.getAllRecordsByCityName(cityName).get(0);
+            String url = "https://api.openweathermap.org/data/2.5/weather?q=" + cityName + "&appid=87cdd7f5bbfec3051219cb2cf72ef799&units=metric";
+            String result = restTemplate.getForObject(url, String.class);
+
+            try {
+                ObjectMapper objectMapper = new ObjectMapper();
+                RecordDto recordDto = objectMapper.readValue(result, RecordDto.class);
+                System.out.println("Record Dto: " + recordDto);
+
+                System.out.println("Latest record is same date");
+                latestRecord.setBase(recordDto.getBase());
+                latestRecord.setVisibility(recordDto.getVisibility());
+                latestRecord.setDt(recordDto.getDt());
+                latestRecord.setMeasureDate(new Date(recordDto.getDt()*1000));
+                latestRecord.setMeasureTime(new Date(recordDto.getDt()*1000));
+                recordService.save(latestRecord);
+
+                Clouds clouds = latestRecord.getClouds();
+                clouds.setStorage(recordDto.getClouds().getAll());
+                cloudsService.save(clouds);
+
+                Coord coord = latestRecord.getCoordinate();
+                coord.setLat(recordDto.getCoord().getLat());
+                coord.setLon(recordDto.getCoord().getLon());
+                coordService.save(coord);
+
+                Main main = latestRecord.getMain();
+                main.setTemp(recordDto.getMain().getTemp());
+                main.setPressure(recordDto.getMain().getPressure());
+                main.setHumidity(recordDto.getMain().getHumidity());
+                main.setTemp_min(recordDto.getMain().getTemp_min());
+                main.setTemp_max(recordDto.getMain().getTemp_max());
+                main.setFeels_like(recordDto.getMain().getFeels_like());
+                mainService.save(main);
+
+                Sys sys = latestRecord.getSysDetail();
+                sys.setSunrise(recordDto.getSys().getSunrise());
+                sys.setSunset(recordDto.getSys().getSunset());
+                sys.setSysId(recordDto.getSys().getId());
+                sys.setType(recordDto.getSys().getType());
+                sys.setCountry(recordDto.getSys().getCountry());
+                sysService.save(sys);
+
+                Set<Weather> weathers = latestRecord.getWeathers();
+                for (Weather weather : weathers) {
+                    weatherService.deleteWeather(weather);
+                }
+                Set<Weather> recordDtoWeathers = recordDto.getWeather().stream().map(weather -> {
+                    Weather weather1 = new Weather();
+                    weather1.setId(weather.getId());
+                    weather1.setMain(weather.getMain());
+                    weather1.setDescription(weather.getDescription());
+                    weather1.setIcon(weather.getIcon());
+                    return weather1;
+                }).collect(Collectors.toSet());
+
+                recordDtoWeathers.stream().filter(weather -> !weathers.contains(weather)).forEach(weather -> {
+                    Optional<Weather> existingWeather = weatherService.getWeatherById(weather.getWeatherId());
+                    if (existingWeather.isEmpty()) {
+                        weather.getRecords().add(latestRecord);
+                        weatherService.save(weather);
+                    } else {
+                        existingWeather.get().getRecords().add(latestRecord);
+                        weatherService.save(existingWeather.get());
+                    }
+                });
+
+                Wind wind = latestRecord.getWind();
+                wind.setDeg(recordDto.getWind().getDeg());
+                wind.setSpeed(recordDto.getWind().getSpeed());
+                wind.setGust(recordDto.getWind().getGust());
+                windService.save(wind);
+
+                WindDetail windDetail = new WindDetail(recordDto.getWind().getSpeed(), recordDto.getWind().getDeg(), recordDto.getWind().getGust());
+                General general = new General(recordDto.getMain().getTemp(), recordDto.getMain().getFeels_like(), recordDto.getMain().getTemp_min(), recordDto.getMain().getTemp_max(), recordDto.getMain().getPressure(), recordDto.getMain().getHumidity(), recordDto.getClouds().getAll(), recordDto.getVisibility(), windDetail);
+                List<WeatherDetail> weatherDetails = recordDto.getWeather().stream().map(weather -> new WeatherDetail(weather.getDescription(), weather.getIcon())).collect(Collectors.toList());
+                String measureDate = new SimpleDateFormat("yyyy-MM-dd").format(new Date(recordDto.getDt()*1000));
+                String measureTime = new SimpleDateFormat("HH:mm:ss").format(new Date(recordDto.getDt()*1000));
+                WeatherDataResponse weatherDataResponse = new WeatherDataResponse(latestRecord.getId(),recordDto.getId(), recordDto.getName(), recordDto.getSys().getCountry(), recordDto.getTimezone(), weatherDetails, general, measureDate + " " + measureTime);
+
+
+                return ResponseEntity.ok(weatherDataResponse);
+            } catch (JsonProcessingException e) {
+                e.printStackTrace();
+                return ResponseEntity.badRequest().build();
+            }
+        }
+        return ResponseEntity.badRequest().build();
+    }
 }

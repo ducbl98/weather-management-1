@@ -1,7 +1,12 @@
 package com.example.weathermanagement1.entity;
 
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
 import javax.persistence.*;
 
+@Data
+@NoArgsConstructor
 @Table(name = "clouds_details")
 @Entity
 public class Clouds {
@@ -17,9 +22,6 @@ public class Clouds {
     @JoinColumn(name = "record_id", referencedColumnName = "id")
     private Record record;
 
-    public Clouds() {
-    }
-
     public Clouds(int storage, Record record) {
         this.storage = storage;
         this.record = record;
@@ -29,27 +31,4 @@ public class Clouds {
         this.storage = all;
     }
 
-    public long getId() {
-        return id;
-    }
-
-    public void setId(long id) {
-        this.id = id;
-    }
-
-    public int getStorage() {
-        return storage;
-    }
-
-    public void setStorage(int all) {
-        this.storage = all;
-    }
-
-    public Record getRecord() {
-        return record;
-    }
-
-    public void setRecord(Record record) {
-        this.record = record;
-    }
 }

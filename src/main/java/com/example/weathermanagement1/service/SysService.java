@@ -8,10 +8,9 @@ import org.springframework.stereotype.Service;
 @Service
 public class SysService {
 
-    @Autowired
-    private SysRepository sysRepository;
+  @Autowired private SysRepository sysRepository;
 
-    public Sys save(Sys sys) {
-        return sysRepository.save(sys);
-    }
+  public Sys save(Sys sys) {
+    return sysRepository.save(sys);
+  }
 }

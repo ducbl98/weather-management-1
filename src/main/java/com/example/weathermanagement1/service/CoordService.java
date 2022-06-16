@@ -8,10 +8,9 @@ import org.springframework.stereotype.Service;
 @Service
 public class CoordService {
 
-    @Autowired
-    private CoordRepository coordRepository;
+  @Autowired private CoordRepository coordRepository;
 
-    public Coord save(Coord coord) {
-        return coordRepository.save(coord);
-    }
+  public Coord save(Coord coord) {
+    return coordRepository.save(coord);
+  }
 }

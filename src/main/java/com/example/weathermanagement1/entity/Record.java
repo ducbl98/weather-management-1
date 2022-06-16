@@ -1,9 +1,13 @@
 package com.example.weathermanagement1.entity;
 
+import lombok.NoArgsConstructor;
+
 import javax.persistence.*;
 import java.util.Date;
 import java.util.Set;
 
+
+@NoArgsConstructor
 @Table(name = "records")
 @Entity
 public class Record {
@@ -50,9 +54,6 @@ public class Record {
 
     @OneToOne(mappedBy = "record", cascade = CascadeType.ALL)
     private Wind wind;
-
-    public Record() {
-    }
 
     public Record(long dt, long visibility, String base,City city) {
         this.dt = dt;
@@ -164,5 +165,10 @@ public class Record {
     public void setWind(Wind wind) {
         this.wind = wind;
     }
+
+//    @Override
+//    public String toString() {
+//        return "Record{" + "id=" + id + ", dt=" + dt + ", visibility=" + visibility + ", base=" + base + ", measureDate=" + measureDate + ", measureTime=" + measureTime + ", city=" + city + ", clouds=" + clouds + ", coordinate=" + coordinate + ", main=" + main + ", sysDetail=" + sysDetail + ", weathers=" + weathers + ", wind=" + wind + '}';
+//    }
 
 }

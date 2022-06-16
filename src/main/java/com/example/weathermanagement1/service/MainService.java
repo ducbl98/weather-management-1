@@ -8,10 +8,9 @@ import org.springframework.stereotype.Service;
 @Service
 public class MainService {
 
-    @Autowired
-    private MainRepository mainRepository;
+  @Autowired private MainRepository mainRepository;
 
-    public Main save(Main main) {
-        return mainRepository.save(main);
-    }
+  public Main save(Main main) {
+    return mainRepository.save(main);
+  }
 }

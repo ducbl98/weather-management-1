@@ -1,4 +1,4 @@
-package com.example.weathermanagement1.repository;
+package com.example.weathermanagement1.repository.specification;
 
 import com.example.weathermanagement1.entity.Record;
 import org.springframework.data.jpa.domain.Specification;
@@ -23,4 +23,6 @@ public class RecordSpecification {
         }
         return (root, query, cb) -> cb.equal(root.get("measureDate"), date);
     }
+
+
 }

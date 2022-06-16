@@ -8,10 +8,9 @@ import org.springframework.stereotype.Service;
 @Service
 public class WindService {
 
-    @Autowired
-    private WindRepository windRepository;
+  @Autowired private WindRepository windRepository;
 
-    public Wind save(Wind wind) {
-        return windRepository.save(wind);
-    }
+  public Wind save(Wind wind) {
+    return windRepository.save(wind);
+  }
 }

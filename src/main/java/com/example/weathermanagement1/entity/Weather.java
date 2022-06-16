@@ -1,9 +1,14 @@
 package com.example.weathermanagement1.entity;
 
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
 import javax.persistence.*;
 import java.util.HashSet;
 import java.util.Set;
 
+@Data
+@NoArgsConstructor
 @Table(name = "weathers")
 @Entity
 public class Weather {
@@ -24,14 +29,11 @@ public class Weather {
     @Column(name = "icon")
     private String icon;
 
-    @ManyToMany
+    @ManyToMany(fetch = FetchType.EAGER)
     @JoinTable(name = "weathers_records",
             joinColumns = @JoinColumn(name = "weather_id"),
             inverseJoinColumns = @JoinColumn(name = "record_id"))
     private Set<Record> records = new HashSet<>();
-
-    public Weather() {
-    }
 
     public Weather(long weatherId, String main, String description, String icon) {
         this.weatherId = weatherId;
@@ -40,51 +42,14 @@ public class Weather {
         this.icon = icon;
     }
 
-    public long getId() {
-        return id;
-    }
-
-    public void setId(long id) {
-        this.id = id;
-    }
-
-    public long getWeatherId() {
-        return weatherId;
-    }
-
-    public void setWeatherId(long id) {
-        this.weatherId = id;
-    }
-
-    public String getMain() {
-        return main;
-    }
-
-    public void setMain(String main) {
-        this.main = main;
-    }
-
-    public String getDescription() {
-        return description;
-    }
-
-    public void setDescription(String description) {
-        this.description = description;
-    }
-
-    public String getIcon() {
-        return icon;
-    }
-
-    public void setIcon(String icon) {
-        this.icon = icon;
-    }
-
-    public Set<Record> getRecords() {
-        return records;
-    }
-
-    public void setRecords(Set<Record> records) {
-        this.records = records;
-    }
+//    @Override
+//   public String toString() {
+//        return "Weather{" +
+//                "id=" + id +
+//                 ", weatherId=" + weatherId +
+//                ", main='" + main + '\'' +
+//                ", description='" + description + '\'' +
+//                ", icon='" + icon + '\'' +
+//                '}';
+//    }
 }

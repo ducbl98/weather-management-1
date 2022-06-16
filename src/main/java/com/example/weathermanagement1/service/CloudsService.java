@@ -8,10 +8,9 @@ import org.springframework.stereotype.Service;
 @Service
 public class CloudsService {
 
-    @Autowired
-    private CloudsRepository cloudsRepository;
+  @Autowired private CloudsRepository cloudsRepository;
 
-    public Clouds save(Clouds clouds) {
-        return cloudsRepository.save(clouds);
-    }
+  public Clouds save(Clouds clouds) {
+    return cloudsRepository.save(clouds);
+  }
 }

@@ -1,4 +1,4 @@
-package com.example.weathermanagement1.repository;
+package com.example.weathermanagement1.repository.specification;
 
 import com.example.weathermanagement1.entity.City;
 import com.example.weathermanagement1.entity.Record;
